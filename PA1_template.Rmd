@@ -1,25 +1,202 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "Reproducible research - Project 1"
+author: "Bruno"
+date: "`r Sys.Date()`"
+output:
+        bookdown::html_document2:
+        number_sections: true
 ---
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+# Introduction 
+
+In this assessment, we used the following packages: **dplyr**, **ggplot2**, and **bookdown**
+
+```{r Load packages, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(bookdown)
+```
+
+# Loading and preprocessing the data {#Loading}
+
+First, we start by reading the CSV file called *activity.csv* located in the same folder as this R Markdown file and convert the "date" column from character to date format. 
+
+```{r Loding and processing, echo = TRUE}
+activity_raw <- read.csv("activity.csv")
+activity_raw$date <- as.Date(x = activity_raw$date)
+str(activity_raw)
+
+```
+There are 2304 missing values in this table and all of them are located in the first column.
+
+```{r Missing values, echo = TRUE}
+apply(
+        X = activity_raw,
+        MARGIN = 2,
+        FUN = function(x)
+                sum(is.na(x))
+)
+```
+
+So, we initially removed all the rows containing missing values.
+
+```{r Removing missing values, echo = TRUE}
+activity <- activity_raw[complete.cases(activity_raw),]
+```
+
+# What is mean total number of steps taken per day?
+
+In the following, we group the data by date and calculate the mean, median, and total number of steps for each day. The code and summarized results are presented below.
+
+```{r Summary1, echo = TRUE}
+summary <- activity %>%
+        group_by(date) %>%
+        summarize(
+                total_steps = sum(steps),
+                mean = mean(steps),
+                median = median(steps)
+        )
+
+knitr::kable(summary[1:10,], caption = "The first 10 rows of the summary obtained from the cleaned data (NAs removed) showing the total number of steps, mean, and median calculated within each date.")
+```
 
 
-## Loading and preprocessing the data
+The total number of steps per day can be organized in a histogram format.
 
+```{r Histogram, echo = TRUE}
+ggplot(data = summary, aes(x = total_steps)) +
+        labs(title = "Histogram of total number of steps", x = "Total number of steps", y = "Count") +
+        geom_histogram(bins = 8,
+                       color = "white",
+                       fill = "darkgray")
+```
 
+Considering the total number of steps per day, we obtained the median and mean for the total number of steps.
 
-## What is mean total number of steps taken per day?
+```{r SummaryHistogram, echo = TRUE}
+summary_hist <- summary %>% summarize(Mean = mean(total_steps), Median = median(total_steps))
 
+knitr::kable(summary_hist, caption = "Mean and median of the total number of steps")
+```
 
+# What is the average daily activity pattern?
 
-## What is the average daily activity pattern?
+In order to obtain the time series describing the number of steps averaged over all days versus the 5-minute interval, we grouped the data by interval and calculated the average within each interval. The plot is presented below.
 
+```{r}
+time_series <- activity %>%
+        group_by(interval) %>%
+        summarize(average = mean(steps))
 
+ggplot(data = time_series, aes(x = interval, average)) +
+        labs(title = "Number of steps averaged across all days versus interval", x = "Interval", y = "Average number of steps") +
+        geom_line()
+```
 
-## Imputing missing values
+The maximum average number of steps in the plot above as obtained in the 5-minute interval coded as 835.
 
+```{r print}
+i <- match(x = max(time_series$average), table = time_series$average)
 
+paste(
+        "The maximum average is equal to" ,
+        time_series$average[i],
+        "and is obtained in the inteval",
+        time_series$interval[i]
+)
+
+```
+
+# Imputing missing values
+
+Recall that, as we have seen in Section \@ref(Loading), there are 2304 missing valued which are all located in the fist column.
+
+```{r missing values 2, echo = TRUE}
+apply(
+        X = activity_raw,
+        MARGIN = 2,
+        FUN = function(x)
+                sum(is.na(x))
+)
+```
+
+In Table \@ref(tab:Summary1), we see that due to the existence of several missing values it is not possible to
+obtain the mean and median number of steps for some dates. So, we are going to fill the missing number of steps by replacing each of them by the mean number of steps within the corresponding 5-minute interval. 
+
+```{r Filling Missing Values, echo = TRUE}
+activity2 <- merge(x = activity_raw,
+                   y = time_series,
+                   by = "interval")
+
+for (i in which(is.na(activity2$steps)))
+        activity2$steps[i] <- activity2$average[i]
+
+head(activity2, 10)
+```
+
+In Table \@ref(tab:Summary2), we show a new summary considering filled NAs, analogous to the one shown in Table \@ref(tab:Summary1).
+
+```{r Summary2}
+summary2 <- activity2 %>%
+        group_by(date) %>%
+        summarize(
+                total_steps = sum(steps),
+                mean = mean(steps),
+                median = median(steps)
+        )
+
+knitr::kable(summary2[1:10,], caption = "The first 10 rows of the summary obtained from the data with filled NAs showing the total number of steps, mean, and median calculated within each date.")
+```
+
+Moreover, we compare the histograms of total number of steps per day with removed NAs versus with filled NAs.
+
+```{r}
+comparison <- rbind(mutate(summary, group = "Removed NAs"),
+                    mutate(summary2, group = "Filled NAs"))
+
+ggplot(data = comparison, aes(x = total_steps)) +
+        facet_grid(. ~ group) +
+        labs(title = "Comparison of Histograms", x = "Total number of steps", y = "Count") +
+        geom_histogram(bins = 8,
+                       color = "white",
+                       fill = "darkgray")
+
+```
+
+In the table below, we show and compare the mean and median of the total number of steps per day considering the data with removed NAs and with filled NAs. The reader can easily note that the mean remained the same, but the median increased and equalized with the mean.
+
+```{r SummaryHistogram2, echo = TRUE}
+summary_hist2 <- comparison %>% group_by(group) %>% summarize(Mean = mean(total_steps), Median = median(total_steps))
+
+knitr::kable(summary_hist2, caption = "Mean and median of the total number of steps")
+```
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+First, we create a new factor variable called class indicating whether a given date lies on a weekday of on the weekend.
+
+```{r}
+activity2 <- activity2 %>%
+        mutate(class = factor(
+                weekdays(date) %in% c("Saturday", "Sunday"),
+                levels = c(TRUE, FALSE),
+                labels = c("Weekend", "Weekday")
+        ))
+```
+
+We separate the data corresponding to weekdays and weekends, and for each class we calculate the average number of steps for each 5-minute interval. The generated plots are shown as follows.
+
+```{r Weekdays and Weekends}
+time_series2 <- activity2 %>%
+        group_by(class, interval) %>%
+        summarize(average = mean(steps))
+
+ggplot(data = time_series2, aes(x = interval, y = average)) +
+        facet_grid(class ~ .) +
+        labs(title = "Comparison between weekdays and weekends", x = "Interval", y = "Average number of steps") +
+        geom_line()
+```
+
